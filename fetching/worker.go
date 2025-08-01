@@ -1,6 +1,7 @@
 package fetching
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +16,7 @@ type fetchingWorker struct {
 }
 
 // NewFetchingWorker creates a new worker instance with the given ID and thread pool reference
-func NewFetchingWorker(id uint, tp *FetchingThreadPool) *fetchingWorker {
+func newFetchingWorker(id uint, tp *FetchingThreadPool) *fetchingWorker {
 	newWorker := &fetchingWorker{
 		Id:         id,
 		ThreadPool: tp,
@@ -37,13 +38,15 @@ func (fw *fetchingWorker) work() {
 			// Process a new HTTP request job
 
 			var res *http.Response
+			var attemptResult = newFetchingresult(attempt.id)
+
 			res, attempt.ErrorDuringRequest = fw.getData(attempt.url) // Make HTTP request
 
 			attempt.StatusCode = res.StatusCode // Set response status code
 
-			attempt.Data, attempt.ErrorDuringRequest = fw.readData(res) // Read response body
+			attempt.Data, attempt.ErrorDuringRequest = readData(res) // Read response body
 
-			fw.ThreadPool.resolveChannel <- *attempt // Send completed result back
+			fw.ThreadPool.resolveChannel <- *attempt // Send the completed result back
 
 		case <-fw.killchan:
 			// Received termination signal - clean up and exit
@@ -56,22 +59,23 @@ func (fw *fetchingWorker) work() {
 }
 
 // readData reads the response body from an HTTP response and returns it as a string
-func (fw *fetchingWorker) readData(res *http.Response) (string, error) {
+func readData(res *http.Response) ([]byte, error) {
 
 	// Check if response is nil to avoid panic
 	if res == nil {
-		return "", errors.New("response is nil")
+		return nil, errors.New("response is nil")
 	}
 
 	var err error
 
 	// Read all data from response body
 	data, err := io.ReadAll(res.Body)
+
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return string(data), nil // Convert bytes to string
+	return data, nil // Convert bytes to string
 }
 
 // getData performs an HTTP GET request to the specified URL and returns the response
